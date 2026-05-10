@@ -6,6 +6,7 @@ import re
 import time
 import pyautogui
 from services.app_finder import abrir_app
+from services.spotify_service import controlar_spotify, buscar_musica
 
 
 def extrair_musica(comando):
@@ -38,6 +39,49 @@ def extrair_musica(comando):
     return None
 
 
+def extrair_acao_spotify(comando):
+    """
+    Extrai ação específica do Spotify (pause, next, previous, volume)
+    Returns: (acao, parametro) ou (None, None)
+    """
+    comando_lower = comando.lower()
+    
+    # Pause
+    if any(word in comando_lower for word in ["pausar", "pause", "parar"]):
+        return "pause", None
+    
+    # Resume/Play (inclui "despausar")
+    if any(word in comando_lower for word in ["retomar", "continuar", "dar play", "iniciar", "despausar"]):
+        return "resume", None
+    
+    # Next track
+    if any(word in comando_lower for word in ["próxima", "proximo", "pular", "avançar", "next"]):
+        return "next", None
+    
+    # Previous track
+    if any(word in comando_lower for word in ["anterior", "voltar", "previous"]):
+        return "previous", None
+    
+    # Volume
+    if "volume" in comando_lower:
+        # Tenta extrair número
+        numeros = re.findall(r'\d+', comando_lower)
+        if numeros:
+            return "volume", numeros[0]
+        return "volume", None
+    
+    # Queue (adicionar à fila)
+    if any(word in comando_lower for word in ["fila", "queue", "adicionar"]):
+        musica = extrair_musica(comando)
+        return "queue", musica
+    
+    # Current track info
+    if any(word in comando_lower for word in ["tocando", "atual", "agora", "música atual"]):
+        return "current", None
+    
+    return None, None
+
+
 def processar_comando(comando):
     """
     Process user command before sending to AI.
@@ -45,40 +89,55 @@ def processar_comando(comando):
     """
     comando_lower = comando.lower()
 
-    # SPOTIFY - with music search
+    # SPOTIFY - Controle profissional via API
     if "spotify" in comando_lower:
-        # Check if it's a search command
+        # Verifica se é uma ação específica (pause, next, volume, etc)
+        acao, parametro = extrair_acao_spotify(comando)
+        
+        if acao:
+            resultado = controlar_spotify(acao, parametro)
+            return {
+                "acao": "falar",
+                "parametro": "",
+                "resposta": resultado["mensagem"]
+            }
+        
+        # Verifica se é para tocar uma música específica
         if any(word in comando_lower for word in ["música", "musica", "tocar", "play", "colocar", "botar"]):
-            # Extract song name
             musica = extrair_musica(comando)
             
             if musica:
-                # Open Spotify
-                abrir_app("spotify")
-                time.sleep(5)  # Wait for Spotify to open
-                
-                # Try to search for the music
-                try:
-    # Ctrl+K focuses the search bar in Spotify
-                    pyautogui.hotkey('ctrl', 'k')
-                    time.sleep(1.2)
-                    # Type the music name
-                    pyautogui.typewrite(musica, interval=0.05)
-                    time.sleep(1.2)
-                    # Press Enter to search
-                    pyautogui.press('return')
-                    time.sleep(0.8)
-                    pyautogui.press('return')  # segundo Enter
-                except Exception:
-                    # If automation fails, just tell user to search manually
-                    pass
-                
-                resposta = f"Abrindo Spotify e buscando '{musica}'."
-                return {"acao": "falar", "parametro": "", "resposta": resposta}
+                resultado = buscar_musica(musica)
+                return {
+                    "acao": "falar",
+                    "parametro": "",
+                    "resposta": resultado["mensagem"]
+                }
         
-        # Just open Spotify if no music specified
+        # Apenas abrir o Spotify
         abrir_app("spotify")
         return {"acao": "falar", "parametro": "", "resposta": "Abrindo Spotify"}
+    
+    # CONTROLES DE MÍDIA GERAIS (funcionam com qualquer player)
+    # Pause
+    if any(word in comando_lower for word in ["pausar música", "pausar tudo", "pause a música"]):
+        pyautogui.press('playpause')
+        return {"acao": "falar", "parametro": "", "resposta": "Reprodução pausada"}
+    
+    # Play/Resume
+    if any(word in comando_lower for word in ["retomar música", "continuar música", "dar play"]):
+        pyautogui.press('playpause')
+        return {"acao": "falar", "parametro": "", "resposta": "Reprodução retomada"}
+    
+    # Next track
+    if any(word in comando_lower for word in ["próxima música", "pular música", "avançar música"]):
+        pyautogui.press('nexttrack')
+        return {"acao": "falar", "parametro": "", "resposta": "Próxima música"}
+    
+    # Previous track
+    if any(word in comando_lower for word in ["música anterior", "voltar música"]):
+        pyautogui.press('prevtrack')
+        return {"acao": "falar", "parametro": "", "resposta": "Música anterior"}
     
     # DISCORD
     if "discord" in comando_lower:

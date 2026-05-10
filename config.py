@@ -8,8 +8,8 @@ WAKE_WORD = "jarvis"
 # Voice settings
 VOICE_ENGINE = "sapi5"
 LANGUAGE = "pt-BR"
-SPEECH_RECOGNITION_TIMEOUT = 5
-AMBIENT_NOISE_DURATION = 0.3
+SPEECH_RECOGNITION_TIMEOUT = 8  # Aumentado para dar mais tempo
+AMBIENT_NOISE_DURATION = 0.8    # Aumentado para melhor calibração
 
 # Ollama settings
 STREAM = False

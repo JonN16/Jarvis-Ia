@@ -41,5 +41,9 @@ memory_backup.json
 logs/
 *.log
 
+# Spotify & Environment
+.env
+.spotify_cache
+
 # Jupyter
 .ipynb_checkpoints/
