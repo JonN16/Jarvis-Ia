@@ -61,5 +61,6 @@ APPS = {
     "twitter": "twitter",
     "firefox": "firefox",
     "edge": "edge",
-    "microsoft edge": "edge"
+    "microsoft edge": "edge",
+    "obsidian": "obsidian"
 }
