@@ -55,18 +55,20 @@ def processar_comando(comando):
             if musica:
                 # Open Spotify
                 abrir_app("spotify")
-                time.sleep(2)  # Wait for Spotify to open
+                time.sleep(5)  # Wait for Spotify to open
                 
                 # Try to search for the music
                 try:
-                    # Ctrl+L focuses the search bar in Spotify
-                    pyautogui.hotkey('ctrl', 'l')
-                    time.sleep(0.5)
+    # Ctrl+K focuses the search bar in Spotify
+                    pyautogui.hotkey('ctrl', 'k')
+                    time.sleep(1.2)
                     # Type the music name
                     pyautogui.typewrite(musica, interval=0.05)
-                    time.sleep(0.5)
+                    time.sleep(1.2)
                     # Press Enter to search
                     pyautogui.press('return')
+                    time.sleep(0.8)
+                    pyautogui.press('return')  # segundo Enter
                 except Exception:
                     # If automation fails, just tell user to search manually
                     pass
