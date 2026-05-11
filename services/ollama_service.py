@@ -56,12 +56,27 @@ def obter_historico() -> list:
     return list(_historico)
 
 
+def _data_atual() -> str:
+    """Retorna data e hora atual formatada para injetar no contexto"""
+    from datetime import datetime
+    agora = datetime.now()
+    dias = ["segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado","domingo"]
+    meses = ["janeiro","fevereiro","março","abril","maio","junho",
+             "julho","agosto","setembro","outubro","novembro","dezembro"]
+    dia_semana = dias[agora.weekday()]
+    return (f"{dia_semana}, {agora.day} de {meses[agora.month-1]} de {agora.year}, "
+            f"{agora.strftime('%H:%M')}")
+
+
 def _montar_prompt(comando: str, contexto_obsidian: str = None) -> str:
     """
     Serializa o histórico no prompt (o endpoint /api/generate não suporta
     messages[], então incluímos o histórico como texto estruturado).
     """
     partes = []
+
+    # Data e hora atual — sempre presente para o modelo não inventar
+    partes.append(f"[Data e hora atual: {_data_atual()}]")
 
     if contexto_obsidian:
         partes.append(

@@ -13,6 +13,7 @@ from services.obsidian_service import (
     lembrar_preferencia, salvar_preferencia
 )
 from services.system_service import controlar_sistema
+from services.windows_service import controlar_janela, encerrar_processo_janela
 
 
 # ------------------------------------------------------------------
@@ -385,16 +386,80 @@ def processar_comando(comando):
     _PALAVRAS_ACAO = ["spotify", "música", "musica", "tocar", "play", "colocar",
                       "abrir", "abre", "chrome", "discord", "vscode", "site",
                       "volume", "brilho", "screenshot", "desligar", "reiniciar"]
+    # Perguntas com "é" não devem ser salvas como fato
+    _PERGUNTAS_COM_E = ["que dia é", "que horas é", "qual é", "o que é",
+                        "como é", "onde é", "quando é", "quem é", "por que é",
+                        "quanto é", "que dia", "que horas", "você é", "jarvis é"]
     _tem_acao = any(p in comando_lower for p in _PALAVRAS_ACAO)
+    _eh_pergunta = any(p in comando_lower for p in _PERGUNTAS_COM_E) or comando_lower.startswith(("que ", "qual ", "como ", "onde ", "quando ", "quem ", "por que ", "quanto "))
 
-    if not _tem_acao and any(w in comando_lower for w in ["chama", " é ", "se chama"]):
+    if not _tem_acao and not _eh_pergunta and any(w in comando_lower for w in ["chama", " é ", "se chama"]):
         info = extrair_informacao_padrao(comando)
         if info:
             aprender_informacao("fatos", info)
             print(f"[Obsidian] ✅ Fato salvo: {info}")
             return {"acao": "falar", "parametro": "", "resposta": f"Aprendi que {info}"}
 
-    # ── 3. NOME DO USUÁRIO ────────────────────────────────────────────
+    # ── 3. FECHAR APP — deve vir antes dos blocos de abrir ──────────
+    _GATILHOS_FECHAR = ["fechar ", "fecha ", "feche ", "encerrar o ", "encerra o ",
+                        "fechar o ", "fecha o ", "feche o "]
+    # Normaliza acentos para comparação (ex: "ópera" → "opera")
+    import unicodedata as _ud
+    def _norm(t):
+        return ''.join(c for c in _ud.normalize('NFD', t) if _ud.category(c) != 'Mn').lower()
+    _cmd_norm = _norm(comando_lower)
+
+    if any(g in _cmd_norm for g in _GATILHOS_FECHAR):
+        # Extrai o nome do app (usa versão normalizada)
+        _app_fechar = _cmd_norm
+        for g in _GATILHOS_FECHAR + ["janela", "app ", "aplicativo", "programa", "o ", "a "]:
+            _app_fechar = _app_fechar.replace(g, " ")
+        _app_fechar = " ".join(_app_fechar.split()).strip(".,!? ")
+
+        # Mapeia nomes amigáveis → nome do processo (sem .exe)
+        _mapa_fechar = {
+            "explorador de arquivos": "explorer",
+            "explorador": "explorer",
+            "files": "explorer",
+            "arquivos": "explorer",
+            "chrome": "chrome",
+            "navegador": "chrome",
+            "opera gx": "opera",
+            "opera": "opera",
+            "firefox": "firefox",
+            "edge": "msedge",
+            "spotify": "spotify",
+            "discord": "discord",
+            "vscode": "code",
+            "visual studio code": "code",
+            "notepad": "notepad",
+            "bloco de notas": "notepad",
+            "obsidian": "obsidian",
+            "paint": "mspaint",
+            "calculadora": "calculator",
+            "calculator": "calculator",
+            "teams": "teams",
+            "zoom": "zoom",
+            "steam": "steam",
+            "word": "winword",
+            "excel": "excel",
+            "powerpoint": "powerpnt",
+            "vlc": "vlc",
+            "telegram": "telegram",
+            "whatsapp": "whatsapp",
+        }
+        _nome_processo = _mapa_fechar.get(_app_fechar, _app_fechar) if _app_fechar else None
+
+        if not _app_fechar or _app_fechar in ("", "gx"):
+            # "fechar janela" sem nome → fecha janela ativa
+            r = controlar_janela("fechar", None)
+        else:
+            # Para apps: mata o processo diretamente (nunca fecha pela janela para evitar fechar aba errada)
+            sucesso, msg = encerrar_processo_janela(_nome_processo or _app_fechar)
+            r = {"sucesso": sucesso, "mensagem": msg}
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    # ── 3b. NOME DO USUÁRIO ───────────────────────────────────────────
     if any(w in comando_lower for w in ["meu nome é", "me chamo", "eu sou"]):
         nome = extrair_nome(comando)
         if nome:
@@ -472,7 +537,27 @@ def processar_comando(comando):
         abrir_app("spotify")
         return {"acao": "falar", "parametro": "", "resposta": "Abrindo Spotify"}
 
-    # ── 7. SITES ──────────────────────────────────────────────────────
+    # ── 7. PESQUISA / SITES ──────────────────────────────────────────
+    # Pesquisa no Google
+    _gatilhos_pesquisa = ["pesquisar no google", "pesquisa no google", "buscar no google",
+                          "busca no google", "procurar no google", "pesquisar sobre",
+                          "pesquisa sobre", "googlar", "googlear"]
+    if any(g in comando_lower for g in _gatilhos_pesquisa):
+        # Extrai o termo de pesquisa removendo o gatilho
+        termo_pesquisa = comando_lower
+        for g in _gatilhos_pesquisa:
+            termo_pesquisa = termo_pesquisa.replace(g, "").strip()
+        termo_pesquisa = termo_pesquisa.strip(".,!? ")
+        if termo_pesquisa:
+            import urllib.parse
+            url = f"https://www.google.com/search?q={urllib.parse.quote(termo_pesquisa)}"
+            webbrowser.open(url)
+            return {"acao": "falar", "parametro": "", "resposta": f"Pesquisando '{termo_pesquisa}' no Google"}
+        else:
+            webbrowser.open("https://www.google.com")
+            return {"acao": "falar", "parametro": "", "resposta": "Abrindo o Google"}
+
+    # Abrir sites diretos
     if any(w in comando_lower for w in ["entrar no site", "abrir site", "entrar site", "acessar site"]):
         site = extrair_site(comando)
         if site:
@@ -679,7 +764,74 @@ def processar_comando(comando):
 
 
 
-    # ── 11. ENCERRAR ──────────────────────────────────────────────────
+    # ── 11. CONTROLE DE JANELAS ──────────────────────────────────────
+
+    def _extrair_app_janela(cmd):
+        remover = ["minimizar", "maximizar", "restaurar", "fechar", "abrir", "focar",
+                   "trocar para", "mudar para", "ir para", "a janela", "o app",
+                   "o aplicativo", "janela do", "app do", "a aba", "a tela",
+                   "forçar", "forçado", "encerrar", "matar", "forcar"]
+        resultado = cmd
+        for r in remover:
+            resultado = resultado.replace(r, "")
+        return resultado.strip().strip(".,!? ") or None
+
+    if any(w in comando_lower for w in ["minimizar", "minimiza"]):
+        app = _extrair_app_janela(comando_lower)
+        r = controlar_janela("minimizar", app)
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["maximizar", "maximiza"]):
+        app = _extrair_app_janela(comando_lower)
+        r = controlar_janela("maximizar", app)
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["restaurar janela", "restaura janela", "tamanho normal"]):
+        app = _extrair_app_janela(comando_lower)
+        r = controlar_janela("restaurar", app)
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["fechar janela", "fecha janela", "fechar o app",
+                                         "fechar a janela", "fechar app", "fecha app"]):
+        app = _extrair_app_janela(comando_lower)
+        r = controlar_janela("fechar", app)
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["alt tab", "próxima janela", "proxima janela",
+                                         "trocar janela", "alternar janela"]):
+        r = controlar_janela("alternar")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["minimizar tudo", "minimiza tudo",
+                                         "mostrar area de trabalho", "mostrar área de trabalho",
+                                         "área de trabalho", "area de trabalho"]):
+        r = controlar_janela("minimizar_tudo")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["quais apps estão abertos", "quais janelas estão abertas",
+                                         "o que está aberto", "apps abertos", "janelas abertas",
+                                         "o que tenho aberto", "listar janelas", "listar apps",
+                                         "mostrar aplicativos", "mostrar apps", "mostrar janelas",
+                                         "aplicativos abertos", "quais programas", "programas abertos"]):
+        r = controlar_janela("listar")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["forçar fechar", "forçar encerrar", "matar processo",
+                                         "forcar fechar", "forcar encerrar"]):
+        app = _extrair_app_janela(comando_lower)
+        r = controlar_janela("encerrar", app)
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["configurações do windows", "configuracoes do windows",
+                                         "abrir configurações", "abrir configuracoes"]):
+        r = controlar_janela("configuracoes")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    if any(w in comando_lower for w in ["gerenciador de tarefas", "task manager"]):
+        r = controlar_janela("gerenciador_tarefas")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+
+    # ── 12. ENCERRAR ──────────────────────────────────────────────────
     if any(w in comando_lower for w in ["encerrar", "desligar", "goodbye"]):
         return {"acao": "encerrar", "parametro": "", "resposta": ""}
 

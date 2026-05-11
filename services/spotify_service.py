@@ -211,7 +211,7 @@ class SpotifyService:
             return False, f"Erro ao tocar música: {type(e).__name__}: {e}"
 
     def pause(self):
-        """Pausa a reprodução"""
+        """Pausa a reprodução. Fallback automático para tecla de mídia em conta Free."""
         if not self.sp:
             return False, "Spotify não conectado"
         try:
@@ -219,13 +219,23 @@ class SpotifyService:
             return True, "Reprodução pausada"
         except spotipy.SpotifyException as e:
             if e.http_status in (403, 404):
-                return False, "Conta gratuita ou sessão inativa: use os controles de mídia do Windows para pausar."
+                # Conta Free ou sessão inativa — usa tecla de mídia como fallback
+                return self._fallback_media_key("playpause", "Reprodução pausada")
             return False, f"Erro ao pausar: {e}"
         except Exception as e:
             return False, f"Erro ao pausar: {e}"
 
+    def _fallback_media_key(self, tecla: str, mensagem_sucesso: str) -> tuple:
+        """Fallback via tecla de mídia do teclado quando a API não permite"""
+        try:
+            import pyautogui
+            pyautogui.press(tecla)
+            return True, mensagem_sucesso
+        except Exception as e:
+            return False, f"Fallback de tecla falhou: {e}"
+
     def resume(self):
-        """Retoma a reprodução"""
+        """Retoma a reprodução. Fallback automático para tecla de mídia em conta Free."""
         if not self.sp:
             return False, "Spotify não conectado"
         try:
@@ -234,15 +244,14 @@ class SpotifyService:
             return True, "Reprodução retomada"
         except spotipy.SpotifyException as e:
             if e.http_status == 404:
-                # Tenta wake-up e repete
                 device_id = self._wake_up_spotify()
                 try:
                     self.sp.start_playback(device_id=device_id)
-                    return True, "Reprodução retomada após ativação do dispositivo"
+                    return True, "Reprodução retomada"
                 except Exception:
                     pass
             if e.http_status in (403, 404):
-                return False, "Conta gratuita ou sessão inativa: use os controles de mídia do Windows para play."
+                return self._fallback_media_key("playpause", "Reprodução retomada")
             return False, f"Erro ao retomar: {e}"
         except Exception as e:
             return False, f"Erro ao retomar: {e}"
@@ -256,7 +265,7 @@ class SpotifyService:
             return True, "Próxima música"
         except spotipy.SpotifyException as e:
             if e.http_status in (403, 404):
-                return False, "Conta gratuita ou sessão inativa: use os controles de mídia do Windows para pular."
+                return self._fallback_media_key("nexttrack", "Próxima música")
             return False, f"Erro ao pular: {e}"
         except Exception as e:
             return False, f"Erro ao pular: {e}"
@@ -270,7 +279,7 @@ class SpotifyService:
             return True, "Música anterior"
         except spotipy.SpotifyException as e:
             if e.http_status in (403, 404):
-                return False, "Conta gratuita ou sessão inativa: use os controles de mídia do Windows para voltar."
+                return self._fallback_media_key("prevtrack", "Música anterior")
             return False, f"Erro ao voltar: {e}"
         except Exception as e:
             return False, f"Erro ao voltar: {e}"
