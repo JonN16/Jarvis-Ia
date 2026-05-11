@@ -47,3 +47,6 @@ logs/
 
 # Jupyter
 .ipynb_checkpoints/
+
+memory.json
+apps_cache.json

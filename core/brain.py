@@ -600,9 +600,6 @@ def processar_comando(comando):
     if any(w in comando_lower for w in ["paint", "pintura"]):
         abrir_app("paint")
         return {"acao": "falar", "parametro": "", "resposta": "Abrindo Paint"}
-    if any(w in comando_lower for w in ["league", "lol", "tft"]):
-        abrir_app("lol")
-        return {"acao": "falar", "parametro": "", "resposta": "Abrindo League of Legends"}
 
     # ── 10. OBSIDIAN ──────────────────────────────────────────────────
     if "obsidian" in comando_lower:
