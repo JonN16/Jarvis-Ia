@@ -179,16 +179,21 @@ def escanear_atalhos(verbose: bool = True) -> dict:
                             if verbose:
                                 print(f"  🔗 {arq:35} → {exe_alvo}")
                     else:
-                        # App desconhecido mas tem atalho — adiciona com o nome do atalho
-                        apelido_limpo = nome_atalho.strip().lower()
-                        if apelido_limpo and len(apelido_limpo) > 1:
+                        # App desconhecido — só adiciona se parece um launcher/app real
+                        # Ignora: contatos, documentos, pastas, links web
+                        _parece_app = any(keyword in exe_alvo.lower() for keyword in
+                                         [".exe", "launcher", "client", "app", "game"])
+                        _ignorar_nomes = ["chrome", "edge", "firefox", "opera",  # já cobertos
+                                          "uninstall", "setup", "install", "update",
+                                          "shortcut", "atalho"]
+                        _nome_ok = not any(ig in nome_atalho.lower() for ig in _ignorar_nomes)
+                        if _parece_app and _nome_ok and len(nome_atalho) > 2:
                             if nome_exe not in encontrados:
                                 encontrados[nome_exe] = exe_alvo
-                                # Registra apelido dinamicamente
                                 if nome_exe not in _APELIDOS:
-                                    _APELIDOS[nome_exe] = [apelido_limpo]
+                                    _APELIDOS[nome_exe] = [nome_atalho.strip().lower()]
                                 if verbose:
-                                    print(f"  🔗 {arq:35} → {exe_alvo} (novo)")
+                                    print(f"  🔗 {arq:35} → {exe_alvo} (novo: '{nome_atalho}')")
         except (PermissionError, OSError):
             continue
 
@@ -273,6 +278,92 @@ def carregar_cache() -> dict:
     return {}
 
 
+# Apps da Microsoft Store — ficam em WindowsApps (pasta protegida)
+# São abertos via URI scheme ou pelo nome do pacote
+_STORE_APPS = {
+    "whatsapp":     "WhatsApp.exe",          # tenta via PATH (WindowsApps está no PATH)
+    "zap":          "WhatsApp.exe",
+    "calculadora":  "calc",
+    "calculator":   "calc",
+    "fotos":        "ms-photos:",            # URI scheme
+    "photos":       "ms-photos:",
+    "camera":       "microsoft.windows.camera:",
+    "xbox":         "xbox:",
+    "groove":       "mswindowsmusic:",
+    "filmes":       "mswindowsvideo:",
+    "mapas":        "bingmaps:",
+    "clima":        "bingweather:",
+}
+
+_STORE_APELIDOS = {
+    "WhatsApp":     ["whatsapp", "zap"],
+    "calc":         ["calculadora", "calculator"],
+}
+
+
+def _encontrar_whatsapp() -> str | None:
+    """
+    Tenta encontrar o executável do WhatsApp em locais conhecidos.
+    O WhatsApp Desktop (não Store) instala em AppData.
+    """
+    import subprocess
+
+    caminhos_possiveis = [
+        # WhatsApp Desktop (versão standalone)
+        os.path.join(_LOCAL, "WhatsApp", "WhatsApp.exe"),
+        os.path.join(_ROAMING, "WhatsApp", "WhatsApp.exe"),
+        os.path.join(_LOCAL, "Programs", "WhatsApp", "WhatsApp.exe"),
+        # WhatsApp via WindowsApps (Store) — acessível via PATH
+        "WhatsApp.exe",
+    ]
+
+    for caminho in caminhos_possiveis:
+        if os.path.exists(caminho):
+            return caminho
+
+    # Tenta achar via where (se estiver no PATH)
+    try:
+        resultado = subprocess.check_output(
+            ["where", "WhatsApp.exe"],
+            stderr=subprocess.DEVNULL, text=True, timeout=3
+        ).strip().splitlines()
+        if resultado:
+            return resultado[0].strip()
+    except Exception:
+        pass
+
+    # Busca no WindowsApps (requer permissão de admin, mas tenta)
+    windowsapps = os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "WindowsApps")
+    try:
+        for pasta in os.listdir(windowsapps):
+            if "whatsapp" in pasta.lower():
+                exe = os.path.join(windowsapps, pasta, "WhatsApp.exe")
+                if os.path.exists(exe):
+                    return exe
+    except (PermissionError, OSError):
+        pass
+
+    # Último recurso: usa o comando direto (funciona se estiver no PATH via Store)
+    return "WhatsApp"
+
+
+def _adicionar_store_apps(mapa: dict) -> dict:
+    """Adiciona apps da Store ao mapeamento"""
+    # WhatsApp
+    wa_path = _encontrar_whatsapp()
+    if wa_path:
+        mapa["whatsapp"] = wa_path
+        mapa["zap"] = wa_path
+        print(f"  📱 WhatsApp encontrado: {wa_path}")
+    else:
+        # Fallback: usa o nome direto (funciona se estiver instalado via Store)
+        mapa["whatsapp"] = "WhatsApp"
+        mapa["zap"] = "WhatsApp"
+        print("  📱 WhatsApp: usando comando direto (Store)")
+
+    return mapa
+
+
 def get_apps(forcar_rescan: bool = False) -> dict:
     """
     Retorna o mapeamento de apps prontos para uso.
@@ -286,6 +377,7 @@ def get_apps(forcar_rescan: bool = False) -> dict:
             return cache
     exes = escanear_executaveis(verbose=True)
     mapa = gerar_mapeamento(exes)
+    mapa = _adicionar_store_apps(mapa)  # adiciona WhatsApp e outros Store apps
     salvar_cache(mapa)
     return mapa
 

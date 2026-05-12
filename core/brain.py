@@ -14,6 +14,7 @@ from services.obsidian_service import (
 )
 from services.system_service import controlar_sistema
 from services.windows_service import controlar_janela, encerrar_processo_janela
+from services.whatsapp_service import controlar_whatsapp
 
 
 # ------------------------------------------------------------------
@@ -237,6 +238,85 @@ def extrair_nome(comando):
             if nome and len(nome) > 1:
                 return nome.title()
     return None
+
+
+
+def extrair_contato_e_mensagem(comando: str):
+    """
+    Extrai contato e mensagem de comandos como:
+    "manda mensagem pro João dizendo que chego em 10 minutos"
+    "mande uma mensagem para minha mãe dizendo oi"
+    "fala pra Pedro que vou chegar tarde"
+    """
+    cmd = comando.lower()
+
+    # Gatilhos para o nome do contato — cobrem "pro", "pra", "para o/a", "mande para"
+    _gatilhos_contato = [
+        # variações de mandar/enviar + preposição
+        "manda mensagem pro ", "manda mensagem para o ", "manda mensagem para a ",
+        "manda mensagem pra ", "manda mensagem para ",
+        "mande mensagem pro ", "mande mensagem para o ", "mande mensagem para a ",
+        "mande mensagem pra ", "mande mensagem para ",
+        "envia mensagem pro ", "envia mensagem para o ", "envia mensagem para a ",
+        "envia mensagem pra ", "envia mensagem para ",
+        "envie mensagem pro ", "envie mensagem para o ", "envie mensagem para a ",
+        "envie mensagem pra ", "envie mensagem para ",
+        # "manda/mande pro/para"
+        "manda pro ", "manda para o ", "manda para a ", "manda pra ", "manda para ",
+        "mande pro ", "mande para o ", "mande para a ", "mande pra ", "mande para ",
+        # "fala/fale pro/para"
+        "fala pro ", "fala para o ", "fala para a ", "fala pra ", "fala para ",
+        "fale pro ", "fale para o ", "fale para a ", "fale pra ", "fale para ",
+        # "diz/diga pro/para"
+        "diz pro ", "diz para o ", "diz para a ", "diz pra ", "diz para ",
+        "diga pro ", "diga para o ", "diga para a ", "diga pra ", "diga para ",
+        # "envia/envie para"
+        "envia para o ", "envia para a ", "envia pra ", "envia para ",
+        "envie para o ", "envie para a ", "envie pra ", "envie para ",
+        # "mensagem pro/para"
+        "mensagem pro ", "mensagem para o ", "mensagem para a ",
+        "mensagem pra ", "mensagem para ",
+    ]
+
+    contato = None
+    mensagem = None
+
+    for gatilho in sorted(_gatilhos_contato, key=len, reverse=True):
+        if gatilho in cmd:
+            pos = cmd.find(gatilho)
+            resto = cmd[pos + len(gatilho):]
+
+            # Separa contato da mensagem pelos separadores mais comuns
+            _separadores = [
+                " dizendo que ", " dizendo ", " falando que ", " falando ",
+                " que ", " com a mensagem ", " com mensagem ", ": ",
+            ]
+            encontrou_sep = False
+            for sep in _separadores:
+                if sep in resto:
+                    partes = resto.split(sep, 1)
+                    contato_raw = partes[0].strip()
+                    mensagem = partes[1].strip()
+                    # Remove artigos do início do contato ("a minha mãe" → "minha mãe")
+                    for art in ["a minha ", "o meu ", "minha ", "meu ", "a ", "o "]:
+                        if contato_raw.startswith(art):
+                            contato_raw = contato_raw[len(art):]
+                            break
+                    contato = contato_raw.title()
+                    encontrou_sep = True
+                    break
+
+            if not encontrou_sep:
+                # Não achou separador — tudo é o contato, sem mensagem ainda
+                contato_raw = resto.strip()
+                for art in ["a minha ", "o meu ", "minha ", "meu ", "a ", "o "]:
+                    if contato_raw.startswith(art):
+                        contato_raw = contato_raw[len(art):]
+                        break
+                contato = contato_raw.title()
+            break
+
+    return contato, mensagem
 
 
 def extrair_palavras_chave(comando):
@@ -831,6 +911,46 @@ def processar_comando(comando):
     # ── 12. ENCERRAR ──────────────────────────────────────────────────
     if any(w in comando_lower for w in ["encerrar", "desligar", "goodbye"]):
         return {"acao": "encerrar", "parametro": "", "resposta": ""}
+
+
+    # ── WHATSAPP ─────────────────────────────────────────────────────
+    _GATILHOS_WA_MSG = [
+        "manda mensagem", "mande mensagem", "envia mensagem", "envie mensagem",
+        "manda pro ", "manda para ", "manda pra ",
+        "mande pro ", "mande para ", "mande pra ",
+        "fala pro ", "fala para ", "fala pra ",
+        "fale pro ", "fale para ", "fale pra ",
+        "diz pro ", "diz para ", "diz pra ",
+        "diga pro ", "diga para ", "diga pra ",
+        "mensagem pro ", "mensagem para ", "mensagem pra ",
+    ]
+    _GATILHOS_WA_ABRIR = [
+        "abrir whatsapp", "abre whatsapp", "abrir o whatsapp",
+        "abre o whatsapp", "iniciar whatsapp", "abra o whatsapp",
+    ]
+
+    if any(g in comando_lower for g in _GATILHOS_WA_MSG):
+        contato, mensagem = extrair_contato_e_mensagem(comando)
+        if contato and mensagem:
+            # Tudo numa frase — envia direto
+            r = controlar_whatsapp("enviar", contato=contato, mensagem=mensagem)
+            return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
+        elif contato:
+            # Tem contato mas não tem mensagem — abre conversa E fica aguardando
+            controlar_whatsapp("conversa", contato=contato)
+            return {
+                "acao": "aguardar",
+                "tipo": "whatsapp_mensagem",
+                "contato": contato,
+                "resposta": f"Conversa com {contato} aberta. Qual mensagem você quer enviar?",
+            }
+        else:
+            return {"acao": "falar", "parametro": "",
+                    "resposta": "Para quem você quer mandar mensagem?"}
+
+    if any(g in comando_lower for g in _GATILHOS_WA_ABRIR):
+        r = controlar_whatsapp("abrir")
+        return {"acao": "falar", "parametro": "", "resposta": r["mensagem"]}
 
     # Nenhum comando rápido detectado → vai para a IA
     return None
